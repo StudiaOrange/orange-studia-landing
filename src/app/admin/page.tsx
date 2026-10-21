@@ -8,10 +8,6 @@ import {
   ArrowRight, Mail, ExternalLink, Edit3, Image as ImageIcon, Upload, Eye,
   Star, MapPin, Plus, Wallet as WalletIcon,
 } from 'lucide-react'
-import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, BarChart, Bar, Legend,
-} from 'recharts'
 import { useLeads, LeadSource, Lead, NewsItem, Case } from '@/context/LeadsContext'
 import AdminAuth, { checkAdminSession, clearAdminSession } from '@/components/AdminAuth'
 import FinanceTab from '@/components/FinanceTab'
@@ -58,6 +54,114 @@ function renderPreview(text: string) {
     .join('')
 }
 
+/* ============================================================
+   СОБСТВЕННЫЕ ДИАГРАММЫ (без Recharts — рисуются всегда)
+============================================================ */
+
+/* График-столбцы: заявки за 30 дней */
+function LeadsBarChart({ data }: { data: { date: string; leads: number }[] }) {
+  if (!data || data.length === 0) {
+    return (
+      <div className="h-full flex items-center justify-center">
+        <p className="text-sm text-slate-500 dark:text-slate-400">Нет данных для отображения</p>
+      </div>
+    )
+  }
+  const max = Math.max(...data.map((d) => d.leads), 1)
+  const total = data.reduce((s, d) => s + d.leads, 0)
+  return (
+    <div className="h-full flex flex-col">
+      <div className="flex items-end gap-[3px] flex-1 min-h-0">
+        {data.map((d, i) => (
+          <div key={i} className="flex-1 h-full flex items-end group relative" title={`${d.date}: ${d.leads} заявок`}>
+            <div
+              className={`w-full rounded-t transition-all group-hover:opacity-100 ${d.leads > 0 ? 'bg-gradient-to-t from-orange-500 to-amber-400' : 'bg-slate-200 dark:bg-slate-700 opacity-40'}`}
+              style={{ height: `${Math.max((d.leads / max) * 100, 2)}%` }}
+            />
+          </div>
+        ))}
+      </div>
+      <div className="flex items-center justify-between pt-2 text-[10px] text-slate-500 dark:text-slate-400">
+        <span>{data[0]?.date}</span>
+        <span className="font-bold text-slate-700 dark:text-slate-200">Всего за 30 дней: {total}</span>
+        <span>{data[data.length - 1]?.date}</span>
+      </div>
+    </div>
+  )
+}
+
+/* Кольцевая диаграмма: источники заявок (conic-gradient) */
+function SourceDonutChart({ data }: { data: { name: string; value: number; color: string }[] }) {
+  const total = data.reduce((s, x) => s + x.value, 0)
+  if (total === 0) {
+    return (
+      <div className="h-full flex items-center justify-center">
+        <p className="text-sm text-slate-500 dark:text-slate-400">Нет данных для отображения</p>
+      </div>
+    )
+  }
+  let acc = 0
+  const stops = data
+    .map((s) => {
+      const from = (acc / total) * 360
+      acc += s.value
+      const to = (acc / total) * 360
+      return `${s.color} ${from}deg ${to}deg`
+    })
+    .join(', ')
+  return (
+    <div className="h-full flex flex-col">
+      <div className="flex-1 min-h-0 flex items-center justify-center">
+        <div className="relative w-36 h-36 md:w-40 md:h-40 rounded-full" style={{ background: `conic-gradient(${stops})` }}>
+          <div className="absolute inset-[26%] rounded-full bg-white dark:bg-slate-900 flex flex-col items-center justify-center">
+            <span className="text-2xl font-extrabold text-slate-900 dark:text-white">{total}</span>
+            <span className="text-[10px] text-slate-500 dark:text-slate-400">заявок</span>
+          </div>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 pt-3">
+        {data.map((s) => (
+          <div key={s.name} className="flex items-center gap-2 min-w-0" title={`${s.name}: ${s.value}`}>
+            <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: s.color }} />
+            <span className="text-xs text-slate-600 dark:text-slate-300 truncate">{s.name}</span>
+            <span className="ml-auto text-xs font-bold text-slate-900 dark:text-white flex-shrink-0">{s.value}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/* Горизонтальные бары: топ городов */
+function CityBarChart({ data }: { data: { name: string; value: number }[] }) {
+  if (!data || data.length === 0) {
+    return (
+      <div className="h-full flex items-center justify-center">
+        <p className="text-sm text-slate-500 dark:text-slate-400">Нет данных для отображения</p>
+      </div>
+    )
+  }
+  const max = Math.max(...data.map((c) => c.value), 1)
+  return (
+    <div className="h-full flex flex-col justify-center space-y-3">
+      {data.map((c) => (
+        <div key={c.name}>
+          <div className="flex items-center justify-between gap-2 mb-1">
+            <span className="text-xs font-semibold text-slate-700 dark:text-slate-200 truncate">{c.name}</span>
+            <span className="text-xs font-bold text-slate-900 dark:text-white flex-shrink-0">{c.value}</span>
+          </div>
+          <div className="h-2.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-blue-500 to-cyan-400 transition-all"
+              style={{ width: `${(c.value / max) * 100}%` }}
+            />
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export default function AdminPage() {
   const [authorized, setAuthorized] = useState(false)
   useEffect(() => { setAuthorized(checkAdminSession()) }, [])
@@ -102,6 +206,7 @@ export default function AdminPage() {
     value: leads.filter((l) => l.source === src).length,
     color: SOURCE_META[src].hex,
   }))
+  const activeSources = sourceStats.filter((s) => s.value > 0)
 
   const cityStats = (() => {
     const map: Record<string, number> = {}
@@ -305,88 +410,34 @@ export default function AdminPage() {
                 })}
               </div>
 
+              {/* ✅ График: заявки за 30 дней (собственные столбцы) */}
               <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
                 className="bg-white dark:bg-slate-900 rounded-2xl p-5 md:p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
                 <h3 className="text-lg font-extrabold text-slate-900 dark:text-white mb-1">Заявки за 30 дней</h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">Динамика поступления заявок</p>
-                <div className="h-64 md:h-72">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={dailyStats}>
-                      <defs>
-                        <linearGradient id="leadLine" x1="0" y1="0" x2="1" y2="0">
-                          <stop offset="0" stopColor="#f97316" /><stop offset="1" stopColor="#f59e0b" />
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" className="dark:opacity-20" />
-                      <XAxis dataKey="date" tick={{ fontSize: 11 }} stroke="#94a3b8" />
-                      <YAxis tick={{ fontSize: 11 }} stroke="#94a3b8" allowDecimals={false} />
-                      <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '12px', color: 'white', fontSize: '12px' }} />
-                      <Line type="monotone" dataKey="leads" stroke="url(#leadLine)" strokeWidth={3} dot={{ fill: '#f97316', r: 4 }} activeDot={{ r: 6, fill: '#f97316' }} />
-                    </LineChart>
-                  </ResponsiveContainer>
+                <div className="h-56 md:h-64">
+                  <LeadsBarChart data={dailyStats} />
                 </div>
               </motion.div>
 
               <div className="grid lg:grid-cols-2 gap-6">
-                {/* ✅ ИСПРАВЛЕННЫЙ БЛОК: Источники заявок */}
+                {/* ✅ Кольцо: источники заявок */}
                 <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
                   className="bg-white dark:bg-slate-900 rounded-2xl p-5 md:p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
                   <h3 className="text-lg font-extrabold text-slate-900 dark:text-white mb-1">Источники заявок</h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">Распределение по формам сайта</p>
-                  <div className="h-60">
-                    {sourceStats.filter((s) => s.value > 0).length > 0 ? (
-                      <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                          <Pie
-                            data={sourceStats.filter((s) => s.value > 0)}
-                            cx="50%"
-                            cy="50%"
-                            innerRadius={50}
-                            outerRadius={90}
-                            paddingAngle={3}
-                            dataKey="value"
-                            nameKey="name"
-                            label={({ name, percent }: any) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                            labelLine={false}
-                          >
-                            {sourceStats.filter((s) => s.value > 0).map((entry, i) => (
-                              <Cell key={i} fill={entry.color} />
-                            ))}
-                          </Pie>
-                          <Tooltip
-                            contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '12px', color: 'white', fontSize: '12px' }}
-                            formatter={(value: any, name: any) => [`${value} заявок`, name]}
-                          />
-                          <Legend
-                            verticalAlign="bottom"
-                            iconType="circle"
-                            wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }}
-                            formatter={(value: any) => <span style={{ color: 'inherit' }}>{value}</span>}
-                          />
-                        </PieChart>
-                      </ResponsiveContainer>
-                    ) : (
-                      <div className="h-full flex items-center justify-center">
-                        <p className="text-sm text-slate-500 dark:text-slate-400">Нет данных для отображения</p>
-                      </div>
-                    )}
+                  <div className="h-64">
+                    <SourceDonutChart data={activeSources} />
                   </div>
                 </motion.div>
 
+                {/* ✅ Бары: топ городов */}
                 <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}
                   className="bg-white dark:bg-slate-900 rounded-2xl p-5 md:p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
                   <h3 className="text-lg font-extrabold text-slate-900 dark:text-white mb-1">Топ городов</h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">Откуда приходят заявки</p>
-                  <div className="h-60">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={cityStats}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" className="dark:opacity-20" />
-                        <XAxis dataKey="name" tick={{ fontSize: 11 }} stroke="#94a3b8" />
-                        <YAxis tick={{ fontSize: 11 }} stroke="#94a3b8" allowDecimals={false} />
-                        <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '12px', color: 'white', fontSize: '12px' }} />
-                        <Bar dataKey="value" fill="#3b82f6" radius={[8, 8, 0, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
+                  <div className="h-64">
+                    <CityBarChart data={cityStats} />
                   </div>
                 </motion.div>
               </div>
