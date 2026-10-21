@@ -328,7 +328,7 @@ export default function AdminPage() {
               </motion.div>
 
               <div className="grid lg:grid-cols-2 gap-6">
-                {/* ИСПРАВЛЕННЫЙ БЛОК: Источники заявок */}
+                {/* ✅ ИСПРАВЛЕННЫЙ БЛОК: Источники заявок */}
                 <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
                   className="bg-white dark:bg-slate-900 rounded-2xl p-5 md:p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
                   <h3 className="text-lg font-extrabold text-slate-900 dark:text-white mb-1">Источники заявок</h3>
