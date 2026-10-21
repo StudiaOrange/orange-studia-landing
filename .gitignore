@@ -1,14 +1,17 @@
 # Зависимости и сборка
-node_modules
-.next
-out
-dist
-build
+node_modules/
+.next/
+out/
+dist/
+build/
 
 # Переменные окружения
 .env
 .env.local
 .env.production
+
+# Серверная база данных (персональные данные заявок!)
+data/
 
 # Логи и ОС
 *.log
@@ -16,5 +19,5 @@ build
 Thumbs.db
 
 # Редакторы кода
-.vscode
-.idea
+.vscode/
+.idea/

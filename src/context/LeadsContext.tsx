@@ -68,10 +68,12 @@ interface LeadsContextValue {
 const LeadsContext = createContext<LeadsContextValue | null>(null)
 
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36)
+
+/* Старые ключи localStorage (для одноразового переноса данных на сервер) */
 const LEADS_KEY = 'orange_studia_leads_v2'
 const NEWS_KEY = 'orange_studia_news_v2'
 const CASES_KEY = 'orange_studia_cases_v2'
-const CHANNEL_NAME = 'orange-studia-sync'
+
 const MAX_FEATURED = 4
 
 /* ===== Демо-новости ===== */
@@ -247,7 +249,7 @@ function buildDemoLeads(): Lead[] {
 }
 
 /* ============================================================
-   ЗВУК КОЛОКОЛЬЧИКА (с разблокировкой аудио для браузеров)
+ЗВУК КОЛОКОЛЬЧИКА (с разблокировкой аудио для браузеров)
 ============================================================ */
 let audioCtx: AudioContext | null = null
 
@@ -296,116 +298,98 @@ export async function playBell() {
 }
 
 /* ============================================================
-   ПРОВАЙДЕР
+ПЕРЕНOS СТАРЫХ ДАННЫХ ИЗ localStorage (одноразово)
+============================================================ */
+function readLegacy(): { leads: any[]; news: any[]; cases: any[] } | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const l = localStorage.getItem(LEADS_KEY)
+    const n = localStorage.getItem(NEWS_KEY)
+    const c = localStorage.getItem(CASES_KEY)
+    const leads = l ? JSON.parse(l) : []
+    const news = n ? JSON.parse(n) : []
+    const cases = c ? JSON.parse(c) : []
+    if (leads.length || news.length || cases.length) return { leads, news, cases }
+  } catch {
+    /* ignore */
+  }
+  return null
+}
+
+/* ============================================================
+ПРОВАЙДЕР (данные хранятся на сервере: /api/db → data/db.json)
 ============================================================ */
 export function LeadsProvider({ children }: { children: React.ReactNode }) {
   const [leads, setLeads] = useState<Lead[]>([])
   const [news, setNews] = useState<NewsItem[]>([])
   const [cases, setCases] = useState<Case[]>([])
   const [unread, setUnread] = useState(0)
-  const [initialized, setInitialized] = useState(false)
-  const channelRef = useRef<BroadcastChannel | null>(null)
-  const stateRef = useRef({ leads: [] as Lead[], news: [] as NewsItem[], cases: [] as Case[] })
+  const [ready, setReady] = useState(false)
 
-  /* ===== Хелперы персистентности ===== */
-  const persist = useCallback((l: Lead[], n: NewsItem[], c: Case[]) => {
-    if (typeof window === 'undefined') return
-    try {
-      localStorage.setItem(LEADS_KEY, JSON.stringify(l))
-      localStorage.setItem(NEWS_KEY, JSON.stringify(n))
-      localStorage.setItem(CASES_KEY, JSON.stringify(c))
-    } catch {
-      /* quota */
-    }
+  const apply = useCallback((fresh: any) => {
+    if (!fresh) return
+    setLeads(Array.isArray(fresh.leads) ? fresh.leads : [])
+    setNews(Array.isArray(fresh.news) ? fresh.news : [])
+    setCases(Array.isArray(fresh.cases) ? fresh.cases : [])
   }, [])
 
-  const reloadFromStorage = useCallback(() => {
-    if (typeof window === 'undefined') return
+  const send = useCallback(async (action: string, payload: any) => {
     try {
-      const l = localStorage.getItem(LEADS_KEY)
-      const n = localStorage.getItem(NEWS_KEY)
-      const c = localStorage.getItem(CASES_KEY)
-      stateRef.current = {
-        leads: l ? JSON.parse(l) : [],
-        news: n ? JSON.parse(n) : [],
-        cases: c ? JSON.parse(c) : [],
-      }
-      setLeads(stateRef.current.leads)
-      setNews(stateRef.current.news)
-      setCases(stateRef.current.cases)
-    } catch {
-      /* ignore */
+      const res = await fetch('/api/db', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, payload }),
+      })
+      if (res.ok) apply(await res.json())
+    } catch (e) {
+      console.error('DB write error', e)
     }
-  }, [])
+  }, [apply])
 
-  /* ===== Первичная загрузка ===== */
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      setInitialized(true)
-      return
+  const refresh = useCallback(async () => {
+    try {
+      const res = await fetch('/api/db', { cache: 'no-store' })
+      if (res.ok) apply(await res.json())
+    } catch (e) {
+      console.error('DB load error', e)
     }
-    reloadFromStorage()
-    if (!localStorage.getItem(LEADS_KEY)) {
-      const demo = buildDemoLeads()
-      stateRef.current.leads = demo
-      setLeads(demo)
-    }
-    if (!localStorage.getItem(NEWS_KEY)) {
-      stateRef.current.news = DEFAULT_NEWS
-      setNews(DEFAULT_NEWS)
-    }
-    if (!localStorage.getItem(CASES_KEY)) {
-      stateRef.current.cases = DEFAULT_CASES
-      setCases(DEFAULT_CASES)
-    }
-    persist(stateRef.current.leads, stateRef.current.news, stateRef.current.cases)
-    setInitialized(true)
-  }, [reloadFromStorage, persist])
+  }, [apply])
 
-  /* ===== Держим stateRef актуальным ===== */
+  /* ===== Первичная загрузка + одноразовое наполнение ===== */
   useEffect(() => {
-    stateRef.current = { leads, news, cases }
-  }, [leads, news, cases])
-
-  /* ===== Межвкладочная синхронизация ===== */
-  useEffect(() => {
-    if (typeof window === 'undefined' || !('BroadcastChannel' in window)) return
-    const bc = new BroadcastChannel(CHANNEL_NAME)
-    channelRef.current = bc
-    bc.onmessage = (e) => {
-      const msg = e.data
-      if (!msg) return
-      if (msg.type === 'lead-created') {
-        reloadFromStorage()
-        window.dispatchEvent(new CustomEvent('lead-created', { detail: msg.lead }))
-      } else if (msg.type === 'changed') {
-        reloadFromStorage()
+    let alive = true
+    const init = async () => {
+      try {
+        const res = await fetch('/api/db', { cache: 'no-store' })
+        let fresh = res.ok ? await res.json() : null
+        if (fresh && !fresh.seededAt) {
+          const legacy = readLegacy()
+          const payload = legacy || { leads: buildDemoLeads(), news: DEFAULT_NEWS, cases: DEFAULT_CASES }
+          const sr = await fetch('/api/db', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'seed', payload }),
+          })
+          if (sr.ok) fresh = await sr.json()
+        }
+        if (alive) apply(fresh)
+      } catch (e) {
+        console.error('DB init error', e)
+      } finally {
+        if (alive) setReady(true)
       }
     }
-    const onStorage = (e: StorageEvent) => {
-      if ([LEADS_KEY, NEWS_KEY, CASES_KEY].includes(e.key || '')) reloadFromStorage()
-    }
-    window.addEventListener('storage', onStorage)
-    return () => {
-      bc.close()
-      channelRef.current = null
-      window.removeEventListener('storage', onStorage)
-    }
-  }, [reloadFromStorage])
+    init()
+    return () => { alive = false }
+  }, [apply])
 
-  /* ===== Разблокировка аудио при первом взаимодействии ===== */
+  /* ===== Автообновление при возврате на вкладку ===== */
   useEffect(() => {
-    if (typeof document === 'undefined') return
-    const unlock = () => unlockAudio()
-    document.addEventListener('pointerdown', unlock)
-    document.addEventListener('keydown', unlock)
-    document.addEventListener('touchstart', unlock)
-    return () => {
-      document.removeEventListener('pointerdown', unlock)
-      document.removeEventListener('keydown', unlock)
-      document.removeEventListener('touchstart', unlock)
-    }
-  }, [])
+    if (typeof window === 'undefined') return
+    const onFocus = () => refresh()
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [refresh])
 
   /* ===== Звук + мигание заголовка при новой заявке ===== */
   useEffect(() => {
@@ -453,111 +437,82 @@ export function LeadsProvider({ children }: { children: React.ReactNode }) {
   })()
 
   /* ============================================================
-     ДЕЙСТВИЯ: ЗАЯВКИ
+  ДЕЙСТВИЯ: ЗАЯВКИ
   ============================================================ */
   const addLead = useCallback((l: Omit<Lead, 'id' | 'createdAt' | 'status'>) => {
     const lead: Lead = { ...l, id: uid(), createdAt: Date.now(), status: 'new' }
-    const next = [lead, ...stateRef.current.leads]
-    stateRef.current = { ...stateRef.current, leads: next }
-    setLeads(next)
-    persist(next, stateRef.current.news, stateRef.current.cases)
-    if (channelRef.current) channelRef.current.postMessage({ type: 'lead-created', lead })
+    setLeads((prev) => [lead, ...prev])
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('lead-created', { detail: lead }))
     }
-  }, [persist])
+    send('addLead', lead)
+  }, [send])
 
   const updateLeadStatus = useCallback((id: string, status: Lead['status']) => {
-    const next = stateRef.current.leads.map((l) => (l.id === id ? { ...l, status } : l))
-    stateRef.current = { ...stateRef.current, leads: next }
-    setLeads(next)
-    persist(next, stateRef.current.news, stateRef.current.cases)
-    if (channelRef.current) channelRef.current.postMessage({ type: 'changed' })
-  }, [persist])
+    setLeads((prev) => prev.map((l) => (l.id === id ? { ...l, status } : l)))
+    send('updateLeadStatus', { id, status })
+  }, [send])
 
   const deleteLead = useCallback((id: string) => {
-    const next = stateRef.current.leads.filter((l) => l.id !== id)
-    stateRef.current = { ...stateRef.current, leads: next }
-    setLeads(next)
-    persist(next, stateRef.current.news, stateRef.current.cases)
-    if (channelRef.current) channelRef.current.postMessage({ type: 'changed' })
-  }, [persist])
+    setLeads((prev) => prev.filter((l) => l.id !== id))
+    send('deleteLead', { id })
+  }, [send])
 
   /* ============================================================
-     ДЕЙСТВИЯ: НОВОСТИ
+  ДЕЙСТВИЯ: НОВОСТИ
   ============================================================ */
   const addNews = useCallback((n: Omit<NewsItem, 'id'>) => {
-    const next = [{ ...n, id: uid() }, ...stateRef.current.news]
-    stateRef.current = { ...stateRef.current, news: next }
-    setNews(next)
-    persist(stateRef.current.leads, next, stateRef.current.cases)
-    if (channelRef.current) channelRef.current.postMessage({ type: 'changed' })
-  }, [persist])
+    const item = { ...n, id: uid() }
+    setNews((prev) => [item, ...prev])
+    send('addNews', item)
+  }, [send])
 
   const editNews = useCallback((id: string, updates: Partial<Omit<NewsItem, 'id'>>) => {
-    const next = stateRef.current.news.map((n) => (n.id === id ? { ...n, ...updates } : n))
-    stateRef.current = { ...stateRef.current, news: next }
-    setNews(next)
-    persist(stateRef.current.leads, next, stateRef.current.cases)
-    if (channelRef.current) channelRef.current.postMessage({ type: 'changed' })
-  }, [persist])
+    setNews((prev) => prev.map((n) => (n.id === id ? { ...n, ...updates } : n)))
+    send('editNews', { id, ...updates })
+  }, [send])
 
   const deleteNews = useCallback((id: string) => {
-    const next = stateRef.current.news.filter((n) => n.id !== id)
-    stateRef.current = { ...stateRef.current, news: next }
-    setNews(next)
-    persist(stateRef.current.leads, next, stateRef.current.cases)
-    if (channelRef.current) channelRef.current.postMessage({ type: 'changed' })
-  }, [persist])
+    setNews((prev) => prev.filter((n) => n.id !== id))
+    send('deleteNews', { id })
+  }, [send])
 
   /* ============================================================
-     ДЕЙСТВИЯ: КЕЙСЫ
+  ДЕЙСТВИЯ: КЕЙСЫ
   ============================================================ */
   const addCase = useCallback((c: Omit<Case, 'id' | 'createdAt'>) => {
-    const next = [{ ...c, id: uid(), createdAt: Date.now() }, ...stateRef.current.cases]
-    stateRef.current = { ...stateRef.current, cases: next }
-    setCases(next)
-    persist(stateRef.current.leads, stateRef.current.news, next)
-    if (channelRef.current) channelRef.current.postMessage({ type: 'changed' })
-  }, [persist])
+    const item = { ...c, id: uid(), createdAt: Date.now() }
+    setCases((prev) => [item, ...prev])
+    send('addCase', item)
+  }, [send])
 
   const editCase = useCallback((id: string, updates: Partial<Omit<Case, 'id' | 'createdAt'>>) => {
-    const next = stateRef.current.cases.map((c) => (c.id === id ? { ...c, ...updates } : c))
-    stateRef.current = { ...stateRef.current, cases: next }
-    setCases(next)
-    persist(stateRef.current.leads, stateRef.current.news, next)
-    if (channelRef.current) channelRef.current.postMessage({ type: 'changed' })
-  }, [persist])
+    setCases((prev) => prev.map((c) => (c.id === id ? { ...c, ...updates } : c)))
+    send('editCase', { id, ...updates })
+  }, [send])
 
   const deleteCase = useCallback((id: string) => {
-    const next = stateRef.current.cases.filter((c) => c.id !== id)
-    stateRef.current = { ...stateRef.current, cases: next }
-    setCases(next)
-    persist(stateRef.current.leads, stateRef.current.news, next)
-    if (channelRef.current) channelRef.current.postMessage({ type: 'changed' })
-  }, [persist])
+    setCases((prev) => prev.filter((c) => c.id !== id))
+    send('deleteCase', { id })
+  }, [send])
 
   const toggleCaseFeatured = useCallback((id: string) => {
-    const current = stateRef.current.cases
-    const target = current.find((c) => c.id === id)
+    const target = cases.find((c) => c.id === id)
     if (!target) return
-    const featuredCount = current.filter((c) => c.featured).length
+    const featuredCount = cases.filter((c) => c.featured).length
     if (!target.featured && featuredCount >= MAX_FEATURED) {
       if (typeof window !== 'undefined') {
         alert(`На главной можно показать не более ${MAX_FEATURED} кейсов. Снимите галочку с одного из уже выбранных.`)
       }
       return
     }
-    const next = current.map((c) => (c.id === id ? { ...c, featured: !c.featured } : c))
-    stateRef.current = { ...stateRef.current, cases: next }
-    setCases(next)
-    persist(stateRef.current.leads, stateRef.current.news, next)
-    if (channelRef.current) channelRef.current.postMessage({ type: 'changed' })
-  }, [persist])
+    setCases((prev) => prev.map((c) => (c.id === id ? { ...c, featured: !c.featured } : c)))
+    send('toggleCaseFeatured', { id })
+  }, [cases, send])
 
   const markAllRead = useCallback(() => setUnread(0), [])
 
-  if (!initialized) return null
+  if (!ready) return null
 
   return (
     <LeadsContext.Provider
