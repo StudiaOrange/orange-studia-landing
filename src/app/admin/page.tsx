@@ -31,7 +31,9 @@ const STATUS_META: Record<Lead['status'], { label: string; color: string; icon: 
 }
 
 type Tab = 'dashboard' | 'leads' | 'news' | 'cases' | 'finance'
+
 const MAX_FEATURED = 4
+
 const EMPTY_NEWS_FORM = {
   title: '', excerpt: '', content: '',
   author: 'Команда Orange Studia',
@@ -174,7 +176,7 @@ export default function AdminPage() {
             onClick={() => setSidebarOpen(false)} className="fixed inset-0 bg-black/50 z-30 lg:hidden" />
         )}
       </AnimatePresence>
-      
+
       <aside className={`fixed lg:sticky top-0 left-0 z-40 h-screen w-64 bg-gradient-to-b from-[#1e293b] to-[#0f172a] dark:from-slate-900 dark:to-slate-950 text-white shadow-xl transform transition-transform duration-300 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 flex flex-col`}>
         <div className="p-5 border-b border-white/10 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
@@ -186,6 +188,7 @@ export default function AdminPage() {
           </div>
           <button onClick={() => setSidebarOpen(false)} className="lg:hidden text-slate-400 hover:text-white"><X size={20} /></button>
         </div>
+
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
           <p className="text-[10px] uppercase tracking-wider text-slate-500 px-3 py-2 font-bold">Главное меню</p>
           {navItems.map((item) => {
@@ -204,6 +207,7 @@ export default function AdminPage() {
               </button>
             )
           })}
+
           <p className="text-[10px] uppercase tracking-wider text-slate-500 px-3 py-2 mt-5 font-bold">Переходы</p>
           <a href="/" className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-300 hover:bg-white/5 hover:text-white transition-all">
             <Home size={18} /> <span className="text-sm font-semibold">На сайт</span>
@@ -215,6 +219,7 @@ export default function AdminPage() {
             <LogOut size={18} /> <span className="text-sm font-semibold">Выйти</span>
           </button>
         </nav>
+
         <div className="p-4 border-t border-white/10">
           <div className="flex items-center gap-3 p-2 rounded-lg bg-white/5">
             <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-cyan-400 flex items-center justify-center font-bold text-sm">АД</div>
@@ -241,6 +246,7 @@ export default function AdminPage() {
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 hidden sm:block">Управление партнерами, заявками и контентом</p>
               </div>
             </div>
+
             <div className="flex items-center gap-2 md:gap-3">
               <a href="/" className="hidden md:flex items-center gap-2 px-3 py-2 text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 font-medium text-sm transition-colors">
                 <Home size={15} /> <span className="hidden lg:inline">На сайт</span>
@@ -274,6 +280,7 @@ export default function AdminPage() {
                   <p className="text-blue-100 text-sm md:text-base max-w-xl">Отслеживайте заявки, управляйте новостями, кейсами и финансами в реальном времени.</p>
                 </div>
               </motion.div>
+
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 {[
                   { label: 'Всего заявок', value: totalLeads, change: '+12%', icon: Inbox, gradient: 'from-blue-500 to-cyan-500' },
@@ -297,6 +304,7 @@ export default function AdminPage() {
                   )
                 })}
               </div>
+
               <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
                 className="bg-white dark:bg-slate-900 rounded-2xl p-5 md:p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
                 <h3 className="text-lg font-extrabold text-slate-900 dark:text-white mb-1">Заявки за 30 дней</h3>
@@ -318,23 +326,53 @@ export default function AdminPage() {
                   </ResponsiveContainer>
                 </div>
               </motion.div>
+
               <div className="grid lg:grid-cols-2 gap-6">
+                {/* ИСПРАВЛЕННЫЙ БЛОК: Источники заявок */}
                 <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
                   className="bg-white dark:bg-slate-900 rounded-2xl p-5 md:p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
                   <h3 className="text-lg font-extrabold text-slate-900 dark:text-white mb-1">Источники заявок</h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">Распределение по формам сайта</p>
                   <div className="h-60">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie data={sourceStats.filter((s) => s.value > 0)} cx="50%" cy="50%" innerRadius={50} outerRadius={90} paddingAngle={3} dataKey="value">
-                          {sourceStats.map((entry, i) => (<Cell key={i} fill={entry.color} />))}
-                        </Pie>
-                        <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '12px', color: 'white', fontSize: '12px' }} />
-                        <Legend verticalAlign="bottom" iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
-                      </PieChart>
-                    </ResponsiveContainer>
+                    {sourceStats.filter((s) => s.value > 0).length > 0 ? (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={sourceStats.filter((s) => s.value > 0)}
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={50}
+                            outerRadius={90}
+                            paddingAngle={3}
+                            dataKey="value"
+                            nameKey="name"
+                            label={({ name, percent }: any) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                            labelLine={false}
+                          >
+                            {sourceStats.filter((s) => s.value > 0).map((entry, i) => (
+                              <Cell key={i} fill={entry.color} />
+                            ))}
+                          </Pie>
+                          <Tooltip
+                            contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '12px', color: 'white', fontSize: '12px' }}
+                            formatter={(value: any, name: any) => [`${value} заявок`, name]}
+                          />
+                          <Legend
+                            verticalAlign="bottom"
+                            iconType="circle"
+                            wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }}
+                            formatter={(value: any) => <span style={{ color: 'inherit' }}>{value}</span>}
+                          />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <div className="h-full flex items-center justify-center">
+                        <p className="text-sm text-slate-500 dark:text-slate-400">Нет данных для отображения</p>
+                      </div>
+                    )}
                   </div>
                 </motion.div>
+
                 <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}
                   className="bg-white dark:bg-slate-900 rounded-2xl p-5 md:p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
                   <h3 className="text-lg font-extrabold text-slate-900 dark:text-white mb-1">Топ городов</h3>
@@ -352,6 +390,7 @@ export default function AdminPage() {
                   </div>
                 </motion.div>
               </div>
+
               <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}
                 className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
                 <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
@@ -415,6 +454,7 @@ export default function AdminPage() {
                       })}
                     </div>
                   </div>
+
                   {leads.map((lead) => {
                     const StatusIcon = STATUS_META[lead.status].icon
                     return (
@@ -434,6 +474,7 @@ export default function AdminPage() {
                             <Trash2 size={14} />
                           </button>
                         </div>
+
                         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 mb-4">
                           {(lead.data.name || lead.data.fullName) && (
                             <div className="flex items-start gap-2.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl px-3 py-2.5">
@@ -481,6 +522,7 @@ export default function AdminPage() {
                             </div>
                           )}
                         </div>
+
                         <div className="flex items-center gap-2 flex-wrap pt-3 border-t border-slate-100 dark:border-slate-800">
                           <span className="text-[11px] text-slate-500 dark:text-slate-400 font-bold">Статус:</span>
                           {(Object.keys(STATUS_META) as Lead['status'][]).map((s) => (
@@ -520,13 +562,16 @@ export default function AdminPage() {
                       </button>
                     )}
                   </div>
+
                   <form onSubmit={submitNews} className="space-y-3">
                     <input type="text" value={newsForm.title} onChange={(e) => setNewsForm({ ...newsForm, title: e.target.value })} required maxLength={120}
                       className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:border-orange-500"
                       placeholder="Заголовок новости..." />
+
                     <textarea value={newsForm.excerpt} onChange={(e) => setNewsForm({ ...newsForm, excerpt: e.target.value })} required rows={2} maxLength={250}
                       className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:border-orange-500 resize-none"
                       placeholder="Краткое описание..." />
+
                     <div>
                       <div className="flex items-center justify-between mb-1.5">
                         <label className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider">Полный текст</label>
@@ -541,6 +586,7 @@ export default function AdminPage() {
                           </button>
                         </div>
                       </div>
+
                       {!previewMode ? (
                         <>
                           <div className="flex flex-wrap gap-1 mb-1.5 p-1.5 bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700">
@@ -560,6 +606,7 @@ export default function AdminPage() {
                         </div>
                       )}
                     </div>
+
                     <div>
                       <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-300 mb-1.5 uppercase tracking-wider">Обложка</label>
                       <input ref={fileInputRef} type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
@@ -580,10 +627,14 @@ export default function AdminPage() {
                           className="w-full h-24 border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-xl flex flex-col items-center justify-center gap-1 hover:border-orange-500 hover:bg-orange-50 dark:hover:bg-orange-500/5 transition-all disabled:opacity-50">
                           {imageUploading ? (
                             <div className="w-6 h-6 border-2 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
-                          ) : (<><ImageIcon size={20} className="text-slate-400" /><span className="text-xs text-slate-500 dark:text-slate-400">Загрузить изображение</span></>)}
+                          ) : (<>
+                            <ImageIcon size={20} className="text-slate-400" />
+                            <span className="text-xs text-slate-500 dark:text-slate-400">Загрузить изображение</span>
+                          </>)}
                         </button>
                       )}
                     </div>
+
                     <div className="grid grid-cols-2 gap-3">
                       <input type="date" value={newsForm.date} onChange={(e) => setNewsForm({ ...newsForm, date: e.target.value })}
                         className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:border-orange-500" />
@@ -591,6 +642,7 @@ export default function AdminPage() {
                         className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:border-orange-500"
                         placeholder="Автор" />
                     </div>
+
                     <div className="flex gap-2 pt-2">
                       <button type="submit" className="flex-1 py-3 bg-gradient-to-r from-orange-500 to-amber-500 text-white font-bold rounded-xl shadow-lg shadow-orange-500/25 hover:shadow-xl flex items-center justify-center gap-2">
                         {editingId ? <><Send size={16} /> Сохранить</> : <><Send size={16} /> Опубликовать</>}
@@ -601,6 +653,7 @@ export default function AdminPage() {
                     </div>
                   </form>
                 </div>
+
                 <div className="space-y-3">
                   <h2 className="text-lg font-extrabold text-slate-900 dark:text-white">Опубликованные ({news.length})</h2>
                   {news.length === 0 ? (
@@ -616,7 +669,9 @@ export default function AdminPage() {
                           <div className="w-20 h-20 rounded-xl overflow-hidden flex-shrink-0 bg-slate-100 dark:bg-slate-800">
                             {n.image ? (
                               <img src={n.image} alt="" className="w-full h-full object-cover" />
-                            ) : (<div className="w-full h-full flex items-center justify-center"><ImageIcon size={20} className="text-slate-400" /></div>)}
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center"><ImageIcon size={20} className="text-slate-400" /></div>
+                            )}
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-1">{n.date} · {n.author}</p>
@@ -670,7 +725,7 @@ export default function AdminPage() {
 }
 
 /* ============================================================
-   ВКЛАДКА КЕЙСОВ
+ВКЛАДКА КЕЙСОВ
 ============================================================ */
 function CasesAdminTab({
   cases, onAdd, onEdit, onDelete, onToggleFeatured,
@@ -690,6 +745,7 @@ function CasesAdminTab({
   const [localToast, setLocalToast] = useState<string | null>(null)
 
   const featuredCount = cases.filter((c) => c.featured).length
+
   const showLocalToast = (msg: string) => { setLocalToast(msg); setTimeout(() => setLocalToast(null), 2500) }
 
   const resetForm = () => {
@@ -748,6 +804,7 @@ function CasesAdminTab({
               </button>
             )}
           </div>
+
           <form onSubmit={handleSubmit} className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -759,10 +816,12 @@ function CasesAdminTab({
                 <input type="text" value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} required className={inputCls} placeholder="Москва" />
               </div>
             </div>
+
             <div>
               <label className={labelCls}>Заголовок кейса *</label>
               <input type="text" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required maxLength={120} className={inputCls} placeholder="RemontPro — 67 заявок за месяц" />
             </div>
+
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className={labelCls}>Название компании *</label>
@@ -773,14 +832,17 @@ function CasesAdminTab({
                 <input type="url" value={form.siteUrl} onChange={(e) => setForm({ ...form, siteUrl: e.target.value })} className={inputCls} placeholder="https://..." />
               </div>
             </div>
+
             <div>
               <label className={labelCls}>Было (проблема) *</label>
               <textarea value={form.before} onChange={(e) => setForm({ ...form, before: e.target.value })} required rows={3} className={`${inputCls} resize-none`} placeholder="Опишите проблему до работы с нами..." />
             </div>
+
             <div>
               <label className={labelCls}>Стало (решение и результат) *</label>
               <textarea value={form.after} onChange={(e) => setForm({ ...form, after: e.target.value })} required rows={3} className={`${inputCls} resize-none`} placeholder="Что получили после работы с нами..." />
             </div>
+
             <div>
               <label className={labelCls}>Метрики (до 3)</label>
               <div className="space-y-2">
@@ -793,11 +855,13 @@ function CasesAdminTab({
               </div>
               <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">Пример: 145 · заявок/мес</p>
             </div>
+
             <button type="submit" className="w-full py-3 bg-gradient-to-r from-orange-500 to-amber-500 text-white font-bold rounded-xl shadow-lg shadow-orange-500/25 hover:shadow-xl flex items-center justify-center gap-2">
               {editingId ? <><Edit3 size={16} /> Сохранить изменения</> : <><Plus size={16} /> Добавить кейс</>}
             </button>
           </form>
         </div>
+
         <div className="space-y-3">
           <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 flex items-center justify-between flex-wrap gap-3">
             <h3 className="text-base font-extrabold text-slate-900 dark:text-white">Все кейсы ({cases.length})</h3>
@@ -808,6 +872,7 @@ function CasesAdminTab({
               </span>
             </div>
           </div>
+
           {cases.length === 0 ? (
             <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-10 text-center">
               <Star size={40} className="mx-auto text-slate-300 dark:text-slate-600 mb-2" />
@@ -833,6 +898,7 @@ function CasesAdminTab({
                   </div>
                   <p className="text-xs text-slate-600 dark:text-slate-300 line-clamp-2 mb-3">{c.after}</p>
                 </div>
+
                 <div className="flex items-center gap-2 px-4 pb-3 flex-wrap">
                   <label className="flex items-center gap-2 cursor-pointer select-none">
                     <input type="checkbox" checked={c.featured} onChange={() => onToggleFeatured(c.id)}
@@ -842,6 +908,7 @@ function CasesAdminTab({
                       <Star size={12} fill={c.featured ? 'currentColor' : 'none'} /> На главную
                     </span>
                   </label>
+
                   <div className="flex gap-1.5 ml-auto">
                     <button onClick={() => startEdit(c)} className="py-1.5 px-3 bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-lg text-xs font-bold flex items-center justify-center gap-1 hover:bg-blue-100 dark:hover:bg-blue-500/20">
                       <Edit3 size={12} /> Ред.
@@ -856,6 +923,7 @@ function CasesAdminTab({
           )}
         </div>
       </div>
+
       <AnimatePresence>
         {localToast && (
           <motion.div initial={{ opacity: 0, y: 40 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }}
