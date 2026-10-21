@@ -44,3 +44,5 @@ export default function Home() {
     </main>
   )
 }
+
+// Тест автодеплоя - можно удалить
