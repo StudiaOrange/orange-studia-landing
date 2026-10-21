@@ -4,20 +4,21 @@ import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, UserPlus, Check, Mail } from 'lucide-react'
 import { openLegalModal } from './LegalModals'
-import { useLeads } from '@/context/LeadsContext'
+import { usePartner } from '@/context/PartnerContext'
 
 export function openRegisterModal() {
   window.dispatchEvent(new CustomEvent('open-register-modal'))
 }
 
 export default function RegisterModal() {
-  const { addLead } = useLeads()
+  const { register } = usePartner()
   const [isOpen, setIsOpen] = useState(false)
   const [form, setForm] = useState({
-    niche: '', fullName: '', email: '', phone: '',
+    niche: '', fullName: '', email: '', phone: '', password: '',
     privacy: false, terms: false,
   })
   const [submitted, setSubmitted] = useState(false)
+  const [loading, setLoading] = useState(false)
 
   const handleChange = (field: string, value: string | boolean) => {
     setForm((prev) => ({ ...prev, [field]: value }))
@@ -29,24 +30,34 @@ export default function RegisterModal() {
       alert('Необходимо принять оба документа')
       return
     }
-    addLead({
-      source: 'register',
-      data: {
+    if (!form.password || form.password.length < 6) {
+      alert('Пароль должен содержать минимум 6 символов')
+      return
+    }
+    setLoading(true)
+    register(
+      {
         fullName: form.fullName,
         email: form.email,
         phone: form.phone,
         niche: form.niche,
+        password: form.password,
       },
-    })
-    setSubmitted(true)
+      form.password,
+    )
+    // Ждём, пока PartnerContext создаст пользователя и войдёт
     setTimeout(() => {
-      setIsOpen(false)
-      setSubmitted(false)
-      setForm({ niche: '', fullName: '', email: '', phone: '', privacy: false, terms: false })
-    }, 2500)
+      setLoading(false)
+      setSubmitted(true)
+      setTimeout(() => {
+        setIsOpen(false)
+        setSubmitted(false)
+        setForm({ niche: '', fullName: '', email: '', phone: '', password: '', privacy: false, terms: false })
+      }, 2000)
+    }, 1500)
   }
 
-  const close = () => { if (!submitted) setIsOpen(false) }
+  const close = () => { if (!submitted && !loading) setIsOpen(false) }
 
   useEffect(() => {
     const handler = () => setIsOpen(true)
@@ -54,7 +65,7 @@ export default function RegisterModal() {
     return () => window.removeEventListener('open-register-modal', handler)
   }, [])
 
-  const canSubmit = form.niche && form.fullName && form.email && form.phone && form.privacy && form.terms
+  const canSubmit = form.niche && form.fullName && form.email && form.phone && form.password && form.privacy && form.terms
 
   return (
     <AnimatePresence>
@@ -87,11 +98,10 @@ export default function RegisterModal() {
                       </div>
                       <div>
                         <h3 className="text-xl font-extrabold">Регистрация</h3>
-                        <p className="text-orange-100 text-xs mt-0.5">Создайте аккаунт партнера</p>
+                        <p className="text-orange-100 text-xs mt-0.5">Создайте аккаунт партнёра</p>
                       </div>
                     </div>
                   </div>
-
                   <form onSubmit={handleSubmit} className="p-6 space-y-4">
                     <input type="text" value={form.niche} onChange={(e) => handleChange('niche', e.target.value)} required
                       className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-200 dark:focus:ring-orange-500/30"
@@ -105,22 +115,33 @@ export default function RegisterModal() {
                     <input type="tel" value={form.phone} onChange={(e) => handleChange('phone', e.target.value)} required
                       className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-200 dark:focus:ring-orange-500/30"
                       placeholder="+7 (999) 000-00-00" />
-
+                    <input type="password" value={form.password} onChange={(e) => handleChange('password', e.target.value)} required minLength={6}
+                      className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-200 dark:focus:ring-orange-500/30"
+                      placeholder="Придумайте пароль (мин. 6 символов)" />
                     <div className="space-y-2.5 pt-2 border-t border-slate-100 dark:border-slate-800">
                       <CheckboxRow checked={form.privacy} onChange={(v) => handleChange('privacy', v)}
                         label={<>Принимаю <button type="button" onClick={(e) => { e.stopPropagation(); openLegalModal('privacy') }} className="text-blue-600 dark:text-blue-400 hover:underline font-medium">Политику конфиденциальности</button></>} />
                       <CheckboxRow checked={form.terms} onChange={(v) => handleChange('terms', v)}
                         label={<>Принимаю <button type="button" onClick={(e) => { e.stopPropagation(); openLegalModal('terms') }} className="text-blue-600 dark:text-blue-400 hover:underline font-medium">Пользовательское соглашение</button></>} />
                     </div>
-
-                    <button type="submit" disabled={!canSubmit}
+                    <button type="submit" disabled={!canSubmit || loading}
                       className={`w-full py-3.5 font-bold rounded-xl transition-all flex items-center justify-center space-x-2 ${
-                        canSubmit ? 'bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-lg shadow-orange-500/30 hover:shadow-xl' : 'bg-slate-200 dark:bg-slate-700 text-slate-400 cursor-not-allowed'
+                        canSubmit && !loading ? 'bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-lg shadow-orange-500/30 hover:shadow-xl' : 'bg-slate-200 dark:bg-slate-700 text-slate-400 cursor-not-allowed'
                       }`}>
-                      <UserPlus size={18} /> <span>Зарегистрироваться</span>
+                      {loading ? (
+                        <>
+                          <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                          <span>Создаём аккаунт...</span>
+                        </>
+                      ) : (
+                        <>
+                          <UserPlus size={18} />
+                          <span>Зарегистрироваться</span>
+                        </>
+                      )}
                     </button>
                     <p className="text-[11px] text-slate-500 dark:text-slate-400 text-center leading-relaxed">
-                      Пароль придет на указанный e-mail
+                      Запомните пароль — он понадобится для входа в кабинет
                     </p>
                   </form>
                 </>
@@ -131,7 +152,8 @@ export default function RegisterModal() {
                   </motion.div>
                   <h3 className="text-xl font-extrabold text-slate-900 dark:text-white mb-2">Успешно!</h3>
                   <p className="text-sm text-slate-600 dark:text-slate-300 flex items-center justify-center space-x-2">
-                    <Mail size={16} /> <span>Пароль отправлен на {form.email}</span>
+                    <Mail size={16} />
+                    <span>Вы вошли в кабинет как {form.email}</span>
                   </p>
                 </div>
               )}
