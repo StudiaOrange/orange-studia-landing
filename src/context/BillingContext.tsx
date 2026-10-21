@@ -37,7 +37,6 @@ export interface Invoice {
 }
 
 export type NotifTarget = 'admin' | 'partner'
-
 export type NotifKind =
   | 'deposit_required'
   | 'topup'
@@ -95,6 +94,15 @@ export function BillingProvider({ children }: { children: React.ReactNode }) {
   const [initialized, setInitialized] = useState(false)
   const channelRef = useRef<BroadcastChannel | null>(null)
   const stateRef = useRef<BillingState>(EMPTY)
+  /* Балансы хранятся на сервере (users[].balance) — админ и партнёр видят одно и то же */
+  const [serverBalance, setServerBalance] = useState<Record<string, number>>({})
+
+  const applyUsers = useCallback((users: any[]) => {
+    if (!Array.isArray(users)) return
+    const map: Record<string, number> = {}
+    users.forEach((u) => { map[u.id] = Number(u.balance) || 0 })
+    setServerBalance(map)
+  }, [])
 
   const reload = useCallback(() => {
     try {
@@ -108,10 +116,31 @@ export function BillingProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
+  const refreshServer = useCallback(async () => {
+    try {
+      const res = await fetch('/api/db', { cache: 'no-store' })
+      if (res.ok) {
+        const data = await res.json()
+        applyUsers(data.users || [])
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [applyUsers])
+
   useEffect(() => {
     reload()
+    refreshServer()
     setInitialized(true)
-  }, [reload])
+  }, [reload, refreshServer])
+
+  /* Автообновление балансов при возврате на вкладку */
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const onFocus = () => refreshServer()
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [refreshServer])
 
   const commit = useCallback((next: BillingState, notify = true) => {
     stateRef.current = next
@@ -143,8 +172,10 @@ export function BillingProvider({ children }: { children: React.ReactNode }) {
   }, [reload])
 
   const getWallet = useCallback((partnerId: string): Wallet => {
-    return stateRef.current.wallets[partnerId] || { partnerId, balance: 0, depositPaid: false }
-  }, [])
+    const local = stateRef.current.wallets[partnerId] || { partnerId, balance: 0, depositPaid: false }
+    const balance = serverBalance[partnerId] !== undefined ? serverBalance[partnerId] : local.balance
+    return { partnerId, balance, depositPaid: local.depositPaid }
+  }, [serverBalance])
 
   const pushNotification = (s: BillingState, n: Omit<Notification, 'id' | 'createdAt' | 'read'>): BillingState => {
     const notif: Notification = { ...n, id: uid(), createdAt: Date.now(), read: false }
@@ -156,7 +187,39 @@ export function BillingProvider({ children }: { children: React.ReactNode }) {
     return { ...s, transactions: [tx, ...s.transactions] }
   }
 
+  /* ===== Серверное изменение баланса ===== */
+  const serverTopUp = useCallback(async (partnerId: string, amount: number): Promise<boolean> => {
+    try {
+      const res = await fetch('/api/db', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'topUpUser', payload: { id: partnerId, amount } }),
+      })
+      if (!res.ok) return false
+      const data = await res.json()
+      applyUsers(data.users || [])
+      return true
+    } catch {
+      return false
+    }
+  }, [applyUsers])
+
   /* ===== Пополнение баланса ===== */
+  const doTopUp = useCallback(async (partnerId: string, amount: number) => {
+    const ok = await serverTopUp(partnerId, amount)
+    if (!ok) return
+    let s = stateRef.current
+    s = pushTx(s, { partnerId, type: 'topup', amount, description: 'Пополнение баланса через ЮKassa' })
+    s = pushNotification(s, {
+      target: 'admin',
+      partnerId,
+      kind: 'topup',
+      title: 'Пополнение баланса',
+      message: `Партнёр пополнил баланс на ${amount.toLocaleString('ru-RU')} ₽`,
+    })
+    commit(s)
+  }, [serverTopUp, commit])
+
   const topUp = useCallback(async (partnerId: string, amount: number) => {
     if (amount < 1000) return { ok: false, error: 'Минимальная сумма пополнения — 1 000 ₽' }
     if (USE_REAL_YOOKASSA) {
@@ -168,7 +231,7 @@ export function BillingProvider({ children }: { children: React.ReactNode }) {
         })
         const data = await res.json()
         if (data.testMode) {
-          doTopUp(partnerId, amount)
+          await doTopUp(partnerId, amount)
           return { ok: true }
         }
         if (data.confirmationUrl) return { ok: true, url: data.confirmationUrl }
@@ -177,29 +240,14 @@ export function BillingProvider({ children }: { children: React.ReactNode }) {
         return { ok: false, error: 'Ошибка платежа' }
       }
     }
-    doTopUp(partnerId, amount)
+    await doTopUp(partnerId, amount)
     return { ok: true }
-  }, [])
-
-  const doTopUp = (partnerId: string, amount: number) => {
-    let s = stateRef.current
-    const w = s.wallets[partnerId] || { partnerId, balance: 0, depositPaid: false }
-    s = { ...s, wallets: { ...s.wallets, [partnerId]: { ...w, balance: w.balance + amount } } }
-    s = pushTx(s, { partnerId, type: 'topup', amount, description: 'Пополнение баланса через ЮKassa' })
-    s = pushNotification(s, {
-      target: 'admin',
-      partnerId,
-      kind: 'topup',
-      title: 'Пополнение баланса',
-      message: `Партнёр пополнил баланс на ${amount.toLocaleString('ru-RU')} ₽`,
-    })
-    commit(s)
-  }
+  }, [doTopUp])
 
   /* ===== Оплата депозита ===== */
   const payDeposit = useCallback((partnerId: string): boolean => {
     const s0 = stateRef.current
-    const w = s0.wallets[partnerId] || { partnerId, balance: 0, depositPaid: false }
+    const w = getWallet(partnerId)
     if (w.depositPaid) return false
     if (w.balance < DEPOSIT_AMOUNT) return false
     let s = { ...s0, wallets: { ...s0.wallets, [partnerId]: { ...w, depositPaid: true } } }
@@ -219,7 +267,7 @@ export function BillingProvider({ children }: { children: React.ReactNode }) {
     commit(s)
     playBell()
     return true
-  }, [commit])
+  }, [commit, getWallet])
 
   /* ===== Акт от администратора ===== */
   const sendInvoice = useCallback(
@@ -250,7 +298,7 @@ export function BillingProvider({ children }: { children: React.ReactNode }) {
       commit(s)
       return invoice
     },
-    [commit]
+    [commit],
   )
 
   /* ===== Партнёр подтверждает акт ===== */
@@ -262,7 +310,7 @@ export function BillingProvider({ children }: { children: React.ReactNode }) {
       let s = {
         ...s0,
         invoices: s0.invoices.map((i) =>
-          i.id === invoiceId ? { ...i, status: 'confirmed' as InvoiceStatus, confirmedAt: Date.now() } : i
+          i.id === invoiceId ? { ...i, status: 'confirmed' as InvoiceStatus, confirmedAt: Date.now() } : i,
         ),
       }
       s = pushNotification(s, {
@@ -274,25 +322,22 @@ export function BillingProvider({ children }: { children: React.ReactNode }) {
       })
       commit(s)
     },
-    [commit]
+    [commit],
   )
 
-  /* ===== Админ списывает по подтверждённому акту ===== */
+  /* ===== Админ списывает по подтверждённому акту (баланс уменьшается на сервере) ===== */
   const writeOffInvoice = useCallback(
     (invoiceId: string): boolean => {
       const s0 = stateRef.current
       const inv = s0.invoices.find((i) => i.id === invoiceId)
       if (!inv || inv.status !== 'confirmed') return false
-      const w = s0.wallets[inv.partnerId] || { partnerId: inv.partnerId, balance: 0, depositPaid: false }
+      const w = getWallet(inv.partnerId)
       if (w.balance < inv.amount) return false
+      serverTopUp(inv.partnerId, -inv.amount)
       let s = {
         ...s0,
-        wallets: { ...s0.wallets, [inv.partnerId]: { ...w, balance: w.balance - inv.amount } },
-      }
-      s = {
-        ...s,
-        invoices: s.invoices.map((i) =>
-          i.id === invoiceId ? { ...i, status: 'written_off' as InvoiceStatus, writtenOffAt: Date.now() } : i
+        invoices: s0.invoices.map((i) =>
+          i.id === invoiceId ? { ...i, status: 'written_off' as InvoiceStatus, writtenOffAt: Date.now() } : i,
         ),
       }
       s = pushTx(s, {
@@ -311,7 +356,7 @@ export function BillingProvider({ children }: { children: React.ReactNode }) {
       commit(s)
       return true
     },
-    [commit]
+    [commit, getWallet, serverTopUp],
   )
 
   /* ===== Уведомление о депозите при сохранении договора ===== */
@@ -330,7 +375,7 @@ export function BillingProvider({ children }: { children: React.ReactNode }) {
       })
       commit(s)
     },
-    [commit]
+    [commit],
   )
 
   const markRead = useCallback(
@@ -339,11 +384,11 @@ export function BillingProvider({ children }: { children: React.ReactNode }) {
       const next = s0.notifications.map((n) =>
         n.target === target && (target === 'admin' || !partnerId || n.partnerId === partnerId)
           ? { ...n, read: true }
-          : n
+          : n,
       )
       commit({ ...s0, notifications: next }, false)
     },
-    [commit]
+    [commit],
   )
 
   const unreadAdmin = state.notifications.filter((n) => n.target === 'admin' && !n.read).length

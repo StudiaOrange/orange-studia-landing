@@ -50,7 +50,7 @@ interface PartnerContextValue {
   calculations: Calculation[]
   reports: Report[]
   isAuthenticated: boolean
-  register: (data: Omit<Partner, 'id' | 'createdAt'>) => void
+  register: (data: Omit<Partner, 'id' | 'createdAt'> & { password?: string }, password?: string) => void
   login: (email: string, password: string) => boolean
   logout: () => void
   addCalculation: (calc: Omit<Calculation, 'id' | 'partnerId' | 'createdAt'>) => void
@@ -62,10 +62,44 @@ interface PartnerContextValue {
 const PartnerContext = createContext<PartnerContextValue | null>(null)
 
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36)
-const PARTNERS_KEY = 'orange_studia_partners'
+
 const SESSION_KEY = 'orange_studia_partner_session'
 const CALCS_KEY = 'orange_studia_calculations'
 const REPORTS_KEY = 'orange_studia_reports'
+/* Старые ключи localStorage — для одноразового переноса партнёров на сервер */
+const LEGACY_PARTNERS_KEY = 'orange_studia_partners'
+const MIGRATED_FLAG = 'orange_partners_migrated_v1'
+/* Ниша хранится локально (серверный пользователь содержит только имя/почту/телефон) */
+const META_KEY = 'orange_partner_meta_v1'
+const DEFAULT_PASSWORD = '123456'
+
+function readMeta(): Record<string, { niche: string }> {
+  try {
+    return JSON.parse(localStorage.getItem(META_KEY) || '{}')
+  } catch {
+    return {}
+  }
+}
+
+function writeMeta(meta: Record<string, { niche: string }>) {
+  try {
+    localStorage.setItem(META_KEY, JSON.stringify(meta))
+  } catch {
+    /* ignore */
+  }
+}
+
+function buildPartner(u: any): Partner {
+  const meta = typeof window !== 'undefined' ? readMeta() : {}
+  return {
+    id: u.id,
+    fullName: u.name || '',
+    email: u.email || '',
+    phone: u.phone || '',
+    niche: meta[u.email]?.niche || '',
+    createdAt: u.createdAt || Date.now(),
+  }
+}
 
 export function PartnerProvider({ children }: { children: React.ReactNode }) {
   const [partner, setPartner] = useState<Partner | null>(null)
@@ -73,29 +107,62 @@ export function PartnerProvider({ children }: { children: React.ReactNode }) {
   const [reports, setReports] = useState<Report[]>([])
   const [initialized, setInitialized] = useState(false)
 
+  /* ===== Первичная загрузка: перенос старых партнёров + восстановление сессии ===== */
   useEffect(() => {
     if (typeof window === 'undefined') {
       setInitialized(true)
       return
     }
-    try {
-      const session = localStorage.getItem(SESSION_KEY)
-      if (session) {
-        const parsed = JSON.parse(session)
-        if (parsed.expires > Date.now()) {
-          const partners: Partner[] = JSON.parse(localStorage.getItem(PARTNERS_KEY) || '[]')
-          const found = partners.find((p) => p.id === parsed.partnerId)
-          if (found) setPartner(found)
-        } else {
-          localStorage.removeItem(SESSION_KEY)
+    const init = async () => {
+      try {
+        setCalculations(JSON.parse(localStorage.getItem(CALCS_KEY) || '[]'))
+        setReports(JSON.parse(localStorage.getItem(REPORTS_KEY) || '[]'))
+
+        /* Одноразовый перенос зарегистрированных ранее партнёров в серверную базу */
+        if (!localStorage.getItem(MIGRATED_FLAG)) {
+          const legacy: any[] = JSON.parse(localStorage.getItem(LEGACY_PARTNERS_KEY) || '[]')
+          if (legacy.length) {
+            for (const p of legacy) {
+              await fetch('/api/db', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  action: 'addUser',
+                  payload: { email: p.email, password: DEFAULT_PASSWORD, name: p.fullName, phone: p.phone },
+                }),
+              }).catch(() => null)
+              const meta = readMeta()
+              if (p.email && p.niche) {
+                meta[p.email] = { niche: p.niche }
+                writeMeta(meta)
+              }
+            }
+          }
+          localStorage.setItem(MIGRATED_FLAG, '1')
         }
+
+        /* Восстановление сессии: ищем пользователя на сервере по id */
+        const session = localStorage.getItem(SESSION_KEY)
+        if (session) {
+          const parsed = JSON.parse(session)
+          if (parsed.expires > Date.now()) {
+            const res = await fetch('/api/db', { cache: 'no-store' })
+            if (res.ok) {
+              const data = await res.json()
+              const found = (data.users || []).find((u: any) => u.id === parsed.partnerId)
+              if (found) setPartner(buildPartner(found))
+              else localStorage.removeItem(SESSION_KEY)
+            }
+          } else {
+            localStorage.removeItem(SESSION_KEY)
+          }
+        }
+      } catch {
+        /* ignore */
       }
-      setCalculations(JSON.parse(localStorage.getItem(CALCS_KEY) || '[]'))
-      setReports(JSON.parse(localStorage.getItem(REPORTS_KEY) || '[]'))
-    } catch {
-      /* ignore */
+      setInitialized(true)
     }
-    setInitialized(true)
+    init()
   }, [])
 
   useEffect(() => {
@@ -108,40 +175,55 @@ export function PartnerProvider({ children }: { children: React.ReactNode }) {
     }
   }, [calculations, reports, initialized])
 
-  const register = useCallback((data: Omit<Partner, 'id' | 'createdAt'>) => {
+  /* ===== Регистрация: создаёт пользователя в серверной базе ===== */
+  const register = useCallback((data: Omit<Partner, 'id' | 'createdAt'> & { password?: string }, password?: string) => {
     if (typeof window === 'undefined') return
-    const newPartner: Partner = { ...data, id: uid(), createdAt: Date.now() }
-    try {
-      const partners: Partner[] = JSON.parse(localStorage.getItem(PARTNERS_KEY) || '[]')
-      if (partners.find((p) => p.email === data.email)) {
-        alert('Пользователь с таким email уже зарегистрирован')
-        return
-      }
-      partners.push(newPartner)
-      localStorage.setItem(PARTNERS_KEY, JSON.stringify(partners))
-      localStorage.setItem(SESSION_KEY, JSON.stringify({ partnerId: newPartner.id, expires: Date.now() + 30 * 24 * 60 * 60 * 1000 }))
-      setPartner(newPartner)
-    } catch {
-      alert('Ошибка регистрации')
-    }
+    const pwd = password || (data as any).password || DEFAULT_PASSWORD
+    const meta = readMeta()
+    meta[data.email] = { niche: data.niche || '' }
+    writeMeta(meta)
+    fetch('/api/db', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'addUser',
+        payload: { email: data.email, password: pwd, name: data.fullName, phone: data.phone },
+      }),
+    })
+      .then(async (res) => {
+        const json = await res.json().catch(() => null)
+        if (!res.ok) {
+          alert(json?.error || 'Ошибка регистрации')
+          return
+        }
+        const created = (json.users || []).find((u: any) => u.email === data.email.toLowerCase())
+        if (created) {
+          localStorage.setItem(SESSION_KEY, JSON.stringify({ partnerId: created.id, expires: Date.now() + 30 * 24 * 60 * 60 * 1000 }))
+          setPartner(buildPartner(created))
+        }
+      })
+      .catch(() => alert('Ошибка сети при регистрации'))
   }, [])
 
+  /* ===== Вход: проверка пароля на сервере ===== */
   const login = useCallback((email: string, password: string): boolean => {
     if (typeof window === 'undefined') return false
-    try {
-      const partners: Partner[] = JSON.parse(localStorage.getItem(PARTNERS_KEY) || '[]')
-      const found = partners.find((p) => p.email.toLowerCase() === email.toLowerCase())
-      if (!found) {
-        alert('Пользователь не найден. Проверьте email.')
-        return false
-      }
-      localStorage.setItem(SESSION_KEY, JSON.stringify({ partnerId: found.id, expires: Date.now() + 30 * 24 * 60 * 60 * 1000 }))
-      setPartner(found)
-      return true
-    } catch {
-      alert('Ошибка входа')
-      return false
-    }
+    fetch('/api/db', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'loginUser', payload: { email, password } }),
+    })
+      .then(async (res) => {
+        const json = await res.json().catch(() => null)
+        if (!res.ok || !json?.user) {
+          alert(json?.error || 'Неверная почта или пароль')
+          return
+        }
+        localStorage.setItem(SESSION_KEY, JSON.stringify({ partnerId: json.user.id, expires: Date.now() + 30 * 24 * 60 * 60 * 1000 }))
+        setPartner(buildPartner(json.user))
+      })
+      .catch(() => alert('Ошибка сети при входе'))
+    return true
   }, [])
 
   const logout = useCallback(() => {

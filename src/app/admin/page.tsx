@@ -6,11 +6,12 @@ import {
   Bell, Inbox, Newspaper, Trash2, Send, LogOut, Home, FileText, User, Phone,
   Briefcase, Calendar, Menu, X, TrendingUp, CheckCircle2, Clock, BarChart3,
   ArrowRight, Mail, ExternalLink, Edit3, Image as ImageIcon, Upload, Eye,
-  Star, MapPin, Plus, Wallet as WalletIcon,
+  Star, MapPin, Plus, Wallet as WalletIcon, Users as UsersIcon,
 } from 'lucide-react'
 import { useLeads, LeadSource, Lead, NewsItem, Case } from '@/context/LeadsContext'
 import AdminAuth, { checkAdminSession, clearAdminSession } from '@/components/AdminAuth'
 import FinanceTab from '@/components/FinanceTab'
+import UsersTab from '@/components/UsersTab'
 import { useBilling } from '@/context/BillingContext'
 
 const SOURCE_META: Record<LeadSource, { label: string; color: string; hex: string; icon: React.ElementType }> = {
@@ -26,7 +27,7 @@ const STATUS_META: Record<Lead['status'], { label: string; color: string; icon: 
   closed: { label: 'Закрыта', color: 'bg-emerald-500', icon: CheckCircle2 },
 }
 
-type Tab = 'dashboard' | 'leads' | 'news' | 'cases' | 'finance'
+type Tab = 'dashboard' | 'leads' | 'news' | 'cases' | 'finance' | 'users'
 
 const MAX_FEATURED = 4
 
@@ -55,10 +56,8 @@ function renderPreview(text: string) {
 }
 
 /* ============================================================
-   СОБСТВЕННЫЕ ДИАГРАММЫ (без Recharts — рисуются всегда)
+СОБСТВЕННЫЕ ДИАГРАММЫ (без Recharts — рисуются всегда)
 ============================================================ */
-
-/* График-столбцы: заявки за 30 дней */
 function LeadsBarChart({ data }: { data: { date: string; leads: number }[] }) {
   if (!data || data.length === 0) {
     return (
@@ -90,7 +89,6 @@ function LeadsBarChart({ data }: { data: { date: string; leads: number }[] }) {
   )
 }
 
-/* Кольцевая диаграмма: источники заявок (conic-gradient) */
 function SourceDonutChart({ data }: { data: { name: string; value: number; color: string }[] }) {
   const total = data.reduce((s, x) => s + x.value, 0)
   if (total === 0) {
@@ -132,7 +130,6 @@ function SourceDonutChart({ data }: { data: { name: string; value: number; color
   )
 }
 
-/* Горизонтальные бары: топ городов */
 function CityBarChart({ data }: { data: { name: string; value: number }[] }) {
   if (!data || data.length === 0) {
     return (
@@ -220,6 +217,7 @@ export default function AdminPage() {
     { id: 'news' as Tab, label: 'Новости', icon: Newspaper, badge: news.length },
     { id: 'cases' as Tab, label: 'Кейсы', icon: Star, badge: cases.length },
     { id: 'finance' as Tab, label: 'Финансы', icon: WalletIcon, badge: unreadAdmin },
+    { id: 'users' as Tab, label: 'Пользователи', icon: UsersIcon },
   ]
 
   const handleLogout = () => { if (confirm('Выйти из админки?')) { clearAdminSession(); setAuthorized(false) } }
@@ -346,7 +344,7 @@ export default function AdminPage() {
               </button>
               <div>
                 <h1 className="text-lg md:text-xl font-extrabold text-slate-900 dark:text-white capitalize">
-                  {tab === 'dashboard' ? 'Дашборд' : tab === 'leads' ? 'Заявки' : tab === 'news' ? 'Новости' : tab === 'cases' ? 'Кейсы' : 'Финансы'}
+                  {tab === 'dashboard' ? 'Дашборд' : tab === 'leads' ? 'Заявки' : tab === 'news' ? 'Новости' : tab === 'cases' ? 'Кейсы' : tab === 'finance' ? 'Финансы' : 'Пользователи'}
                 </h1>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 hidden sm:block">Управление партнерами, заявками и контентом</p>
               </div>
@@ -410,7 +408,6 @@ export default function AdminPage() {
                 })}
               </div>
 
-              {/* ✅ График: заявки за 30 дней (собственные столбцы) */}
               <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
                 className="bg-white dark:bg-slate-900 rounded-2xl p-5 md:p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
                 <h3 className="text-lg font-extrabold text-slate-900 dark:text-white mb-1">Заявки за 30 дней</h3>
@@ -421,7 +418,6 @@ export default function AdminPage() {
               </motion.div>
 
               <div className="grid lg:grid-cols-2 gap-6">
-                {/* ✅ Кольцо: источники заявок */}
                 <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
                   className="bg-white dark:bg-slate-900 rounded-2xl p-5 md:p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
                   <h3 className="text-lg font-extrabold text-slate-900 dark:text-white mb-1">Источники заявок</h3>
@@ -431,7 +427,6 @@ export default function AdminPage() {
                   </div>
                 </motion.div>
 
-                {/* ✅ Бары: топ городов */}
                 <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}
                   className="bg-white dark:bg-slate-900 rounded-2xl p-5 md:p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
                   <h3 className="text-lg font-extrabold text-slate-900 dark:text-white mb-1">Топ городов</h3>
@@ -759,6 +754,9 @@ export default function AdminPage() {
 
           {/* ===== ФИНАНСЫ ===== */}
           {tab === 'finance' && <FinanceTab />}
+
+          {/* ===== ПОЛЬЗОВАТЕЛИ ===== */}
+          {tab === 'users' && <UsersTab />}
         </main>
       </div>
 
