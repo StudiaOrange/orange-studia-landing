@@ -1,0 +1,29 @@
+name: Deploy to Timeweb
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to server
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: root
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd /var/www/orange-studia
+            echo "🔄 Начинаем деплой..."
+            git fetch origin
+            git reset --hard origin/main
+            git clean -fd
+            npm install
+            npm run build
+            pm2 restart orange-studia
+            echo "✅ Деплой завершён!"

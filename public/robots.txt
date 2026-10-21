@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+
+Sitemap: https://cash-boom.live/sitemap.xml
+Host: https://cash-boom.live
